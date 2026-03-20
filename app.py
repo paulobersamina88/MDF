@@ -26,7 +26,6 @@ def build_mass_matrix(weights_kN: np.ndarray) -> np.ndarray:
     return np.diag(masses)
 
 
-
 def build_stiffness_matrix(story_stiffness_kN_per_m: np.ndarray) -> np.ndarray:
     n = len(story_stiffness_kN_per_m)
     K = np.zeros((n, n), dtype=float)
@@ -43,12 +42,10 @@ def build_stiffness_matrix(story_stiffness_kN_per_m: np.ndarray) -> np.ndarray:
     return K
 
 
-
-def solve_modes(M: np.ndarray, K: np.ndarray):
+def solve_modes(M: np.ndarray, K: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Solve generalized eigenvalue problem K phi = w^2 M phi."""
     A = np.linalg.solve(M, K)
     eigvals, eigvecs = np.linalg.eig(A)
-
     eigvals = np.real_if_close(eigvals)
     eigvecs = np.real_if_close(eigvecs)
 
@@ -62,7 +59,7 @@ def solve_modes(M: np.ndarray, K: np.ndarray):
     eigvals[eigvals < 0] = 0.0
     omega = np.sqrt(eigvals)
 
-    # Normalize mode shapes
+    # normalize each mode so max abs displacement = 1
     for i in range(eigvecs.shape[1]):
         mode = eigvecs[:, i]
         max_abs = np.max(np.abs(mode))
@@ -74,10 +71,8 @@ def solve_modes(M: np.ndarray, K: np.ndarray):
     return omega, eigvecs
 
 
-
-def modal_properties(M: np.ndarray, phi: np.ndarray):
+def modal_properties(M: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     ones = np.ones((M.shape[0], 1))
-
     gamma = []
     modal_mass = []
     eff_modal_mass = []
@@ -96,8 +91,10 @@ def modal_properties(M: np.ndarray, phi: np.ndarray):
         modal_mass.append(m_i)
         eff_modal_mass.append(m_eff_i)
 
-    return np.array(gamma), np.array(modal_mass), np.array(eff_modal_mass)
-
+    gamma = np.array(gamma, dtype=float)
+    modal_mass = np.array(modal_mass, dtype=float)
+    eff_modal_mass = np.array(eff_modal_mass, dtype=float)
+    return gamma, modal_mass, eff_modal_mass
 
 
 def compute_periods(omega: np.ndarray) -> np.ndarray:
@@ -107,30 +104,24 @@ def compute_periods(omega: np.ndarray) -> np.ndarray:
     return periods
 
 
-
 def approximate_code_base_shear(total_weight_kN: float, T1: float, SDS: float, R: float, Ie: float) -> float:
-    """Simplified teaching expression inspired by ELF concepts. Not a substitute for full code checks."""
+    """Simplified teaching expression inspired by ELF concepts."""
     T_use = max(T1, 0.05)
     Cs = SDS / max(R / Ie, 1e-6)
 
-    # mild pedagogic period adjustment to show influence of dynamic property
     period_factor = min(1.0, max(0.4, 1.0 / math.sqrt(T_use)))
     Cs_adj = Cs * period_factor
 
-    # keep in a reasonable range for classroom demo
     Cs_adj = min(max(Cs_adj, 0.01), 0.30)
     return Cs_adj * total_weight_kN
 
 
-
 def vertical_distribution_exponent(T: float) -> float:
-    # Teaching approximation similar to ELF vertical distribution trends
     if T <= 0.5:
         return 1.0
     if T >= 2.5:
         return 2.0
     return 1.0 + (T - 0.5) / 2.0
-
 
 
 def distribute_lateral_forces(weights_kN: np.ndarray, heights_m: np.ndarray, V_kN: float, T1: float) -> np.ndarray:
@@ -140,7 +131,6 @@ def distribute_lateral_forces(weights_kN: np.ndarray, heights_m: np.ndarray, V_k
     if s <= 0:
         return np.zeros_like(weights_kN)
     return V_kN * Cvx / s
-
 
 
 def story_shear_from_floor_forces(floor_forces_kN: np.ndarray) -> np.ndarray:
@@ -153,7 +143,6 @@ def story_shear_from_floor_forces(floor_forces_kN: np.ndarray) -> np.ndarray:
     return Vstory
 
 
-
 def compute_modal_floor_force_shape(M: np.ndarray, phi: np.ndarray, gamma: np.ndarray, mode_idx: int) -> np.ndarray:
     mode = phi[:, mode_idx]
     mass_diag = np.diag(M)
@@ -161,7 +150,6 @@ def compute_modal_floor_force_shape(M: np.ndarray, phi: np.ndarray, gamma: np.nd
     if np.max(np.abs(shape)) > 0:
         shape = shape / np.max(np.abs(shape))
     return shape
-
 
 
 def frame_plot(n_story: int, story_h: float, lateral: np.ndarray | None = None, title: str = "Frame View"):
@@ -175,11 +163,9 @@ def frame_plot(n_story: int, story_h: float, lateral: np.ndarray | None = None, 
 
     fig = go.Figure()
 
-    # columns
     fig.add_trace(go.Scatter(x=x_left + dx, y=y, mode="lines+markers", name="Left Column"))
     fig.add_trace(go.Scatter(x=x_right + dx, y=y, mode="lines+markers", name="Right Column"))
 
-    # beams
     for i in range(1, n_story + 1):
         fig.add_trace(
             go.Scatter(
@@ -199,8 +185,7 @@ def frame_plot(n_story: int, story_h: float, lateral: np.ndarray | None = None, 
     return fig
 
 
-
-def force_plot(floor_forces_kN: np.ndarray, heights_m: np.ndarray):
+def force_plot(floor_forces_kN: np.ndarray):
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
@@ -216,15 +201,26 @@ def force_plot(floor_forces_kN: np.ndarray, heights_m: np.ndarray):
     return fig
 
 
-
 def mode_shape_plot(phi: np.ndarray, story_h: float, mode_number: int):
     n = phi.shape[0]
     y = np.arange(1, n + 1) * story_h
     x = phi[:, mode_number - 1]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=np.r_[0, x], y=np.r_[0, y], mode="lines+markers", name=f"Mode {mode_number}"))
-    fig.update_layout(title=f"Mode Shape {mode_number}", xaxis_title="Normalized Lateral Displacement", yaxis_title="Height (m)", height=420)
+    fig.add_trace(
+        go.Scatter(
+            x=np.r_[0, x],
+            y=np.r_[0, y],
+            mode="lines+markers",
+            name=f"Mode {mode_number}",
+        )
+    )
+    fig.update_layout(
+        title=f"Mode Shape {mode_number}",
+        xaxis_title="Normalized Lateral Displacement",
+        yaxis_title="Height (m)",
+        height=420,
+    )
     return fig
 
 
@@ -264,7 +260,7 @@ input_df = pd.DataFrame(
     }
 )
 
-edited_df = st.data_editor(input_df, use_container_width=True, num_rows="fixed")
+edited_df = st.data_editor(input_df, use_container_width=True, num_rows="fixed", key="floor_input_editor")
 weights_kN = ensure_positive(edited_df["Weight_kN"].to_numpy(dtype=float), fallback=100.0)
 stiffness_kNpm = ensure_positive(edited_df["Story_Stiffness_kN_per_m"].to_numpy(dtype=float), fallback=1000.0)
 heights_m = np.arange(1, n_story + 1, dtype=float) * story_h
@@ -301,23 +297,31 @@ col2.metric("Total Weight W (kN)", f"{W_total:,.2f}")
 col3.metric("Approx. Base Shear V (kN)", f"{Vbase:,.2f}")
 col4.metric("1st Mode Mass Participation", f"{eff_mass_ratio[0]*100:.2f}%")
 
-res_tab1, res_tab2, res_tab3, res_tab4 = st.tabs([
-    "Visualization",
-    "Modal Properties",
-    "Seismic Forces",
-    "Matrices & Downloads",
-])
+res_tab1, res_tab2, res_tab3, res_tab4 = st.tabs(
+    ["Visualization", "Modal Properties", "Seismic Forces", "Matrices & Downloads"]
+)
 
 with res_tab1:
     a, b = st.columns([1.2, 1])
+
     with a:
-        st.plotly_chart(frame_plot(n_story, story_h, title="Undeformed Frame"), use_container_width=True)
+        st.plotly_chart(
+            frame_plot(n_story, story_h, title="Undeformed Frame"),
+            use_container_width=True,
+            key="undeformed_frame_chart",
+        )
         st.plotly_chart(
             frame_plot(n_story, story_h, lateral=visual_lateral, title=f"Mode {selected_mode} Visualization"),
             use_container_width=True,
+            key=f"mode_visualization_chart_{selected_mode}",
         )
+
     with b:
-        st.plotly_chart(mode_shape_plot(phi, story_h, selected_mode), use_container_width=True)
+        st.plotly_chart(
+            mode_shape_plot(phi, story_h, selected_mode),
+            use_container_width=True,
+            key=f"selected_mode_shape_chart_{selected_mode}",
+        )
 
         viz_df = pd.DataFrame(
             {
@@ -327,7 +331,7 @@ with res_tab1:
                 "Scaled_Display_Displacement": np.round(visual_lateral, 5),
             }
         )
-        st.dataframe(viz_df, use_container_width=True)
+        st.dataframe(viz_df, use_container_width=True, key="viz_df_table")
 
 with res_tab2:
     modal_df = pd.DataFrame(
@@ -342,23 +346,34 @@ with res_tab2:
             "Cumulative_%": np.round(cum_eff_mass_ratio * 100, 3),
         }
     )
-    st.dataframe(modal_df, use_container_width=True)
+    st.dataframe(modal_df, use_container_width=True, key="modal_df_table")
 
     mode_cols = st.columns(min(n_story, 4))
     for i in range(n_story):
         with mode_cols[i % len(mode_cols)]:
-            st.plotly_chart(mode_shape_plot(phi, story_h, i + 1), use_container_width=True)
+            fig_mode = mode_shape_plot(phi, story_h, i + 1)
+            st.plotly_chart(
+                fig_mode,
+                use_container_width=True,
+                key=f"mode_shape_chart_{i+1}",
+            )
 
     mode_shape_df = pd.DataFrame(phi, columns=[f"Mode {i+1}" for i in range(n_story)])
     mode_shape_df.insert(0, "Floor", [f"Floor {i+1}" for i in range(n_story)])
     st.markdown("#### Mode Shape Matrix")
-    st.dataframe(np.round(mode_shape_df, 5), use_container_width=True)
+    st.dataframe(np.round(mode_shape_df, 5), use_container_width=True, key="mode_shape_df_table")
 
 with res_tab3:
     if code_basis == "NSCP / IBC simplified ELF":
         c1, c2 = st.columns([1, 1])
+
         with c1:
-            st.plotly_chart(force_plot(floor_forces, heights_m), use_container_width=True)
+            st.plotly_chart(
+                force_plot(floor_forces),
+                use_container_width=True,
+                key="seismic_force_plot",
+            )
+
         with c2:
             seismic_df = pd.DataFrame(
                 {
@@ -369,24 +384,26 @@ with res_tab3:
                     "Story_Shear_kN": np.round(story_shear, 3),
                 }
             )
-            st.dataframe(seismic_df, use_container_width=True)
+            st.dataframe(seismic_df, use_container_width=True, key="seismic_df_table")
 
         st.info(
             "The base shear and vertical distribution shown here are simplified for classroom demonstration. "
-            "For a strict NSCP or IBC design check, include the exact edition, full spectral parameters, period limits, "
-            "regularity checks, and all required code minimums and maximums."
+            "For a strict NSCP or IBC design check, include the exact edition, full spectral parameters, "
+            "period limits, regularity checks, and all required code minimums and maximums."
         )
     else:
         st.warning("Seismic floor force distribution is disabled in 'Modal dynamics only' mode.")
 
 with res_tab4:
     mcol1, mcol2 = st.columns(2)
+
     with mcol1:
         st.markdown("#### Mass Matrix M")
-        st.dataframe(pd.DataFrame(np.round(M, 5)), use_container_width=True)
+        st.dataframe(pd.DataFrame(np.round(M, 5)), use_container_width=True, key="mass_matrix_table")
+
     with mcol2:
         st.markdown("#### Stiffness Matrix K")
-        st.dataframe(pd.DataFrame(np.round(K, 5)), use_container_width=True)
+        st.dataframe(pd.DataFrame(np.round(K, 5)), use_container_width=True, key="stiffness_matrix_table")
 
     export_modal = modal_df.copy()
     export_input = edited_df.copy()
@@ -406,24 +423,28 @@ with res_tab4:
         export_modal.to_csv(index=False).encode("utf-8"),
         file_name="modal_properties.csv",
         mime="text/csv",
+        key="download_modal_csv",
     )
     st.download_button(
         "Download mode_shapes.csv",
         export_mode_shapes.to_csv(index=False).encode("utf-8"),
         file_name="mode_shapes.csv",
         mime="text/csv",
+        key="download_mode_shapes_csv",
     )
     st.download_button(
         "Download seismic_forces.csv",
         export_seismic.to_csv(index=False).encode("utf-8"),
         file_name="seismic_forces.csv",
         mime="text/csv",
+        key="download_seismic_csv",
     )
     st.download_button(
         "Download input_table.csv",
         export_input.to_csv(index=False).encode("utf-8"),
         file_name="input_table.csv",
         mime="text/csv",
+        key="download_input_csv",
     )
 
 st.markdown("---")
