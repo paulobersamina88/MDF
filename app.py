@@ -44,12 +44,16 @@ def build_stiffness_matrix(story_stiffness_kN_per_m: np.ndarray) -> np.ndarray:
 
 
 
-def solve_modes(M: np.ndarray, K: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def solve_modes(M: np.ndarray, K: np.ndarray):
     """Solve generalized eigenvalue problem K phi = w^2 M phi."""
-    A = np.linalg.inv(M) @ K
+    A = np.linalg.solve(M, K)
     eigvals, eigvecs = np.linalg.eig(A)
-    eigvals = np.real(eigvals)
-    eigvecs = np.real(eigvecs)
+
+    eigvals = np.real_if_close(eigvals)
+    eigvecs = np.real_if_close(eigvecs)
+
+    eigvals = np.asarray(eigvals, dtype=float)
+    eigvecs = np.asarray(eigvecs, dtype=float)
 
     order = np.argsort(eigvals)
     eigvals = eigvals[order]
@@ -58,13 +62,12 @@ def solve_modes(M: np.ndarray, K: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     eigvals[eigvals < 0] = 0.0
     omega = np.sqrt(eigvals)
 
-    # normalize each mode so roof displacement = 1 or max abs = 1
+    # Normalize mode shapes
     for i in range(eigvecs.shape[1]):
         mode = eigvecs[:, i]
         max_abs = np.max(np.abs(mode))
         if max_abs > 0:
             eigvecs[:, i] = mode / max_abs
-        # keep positive roof displacement for consistency
         if eigvecs[-1, i] < 0:
             eigvecs[:, i] *= -1
 
@@ -72,27 +75,28 @@ def solve_modes(M: np.ndarray, K: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
 
 
-def modal_properties(M: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def modal_properties(M: np.ndarray, phi: np.ndarray):
     ones = np.ones((M.shape[0], 1))
+
     gamma = []
     modal_mass = []
     eff_modal_mass = []
 
     for i in range(phi.shape[1]):
         mode = phi[:, [i]]
-        num = float(mode.T @ M @ ones)
-        den = float(mode.T @ M @ mode)
-        g_i = num / den if den != 0 else 0.0
+
+        num = (mode.T @ M @ ones).item()
+        den = (mode.T @ M @ mode).item()
+
+        g_i = num / den if abs(den) > 1e-12 else 0.0
         m_i = den
-        m_eff_i = (num ** 2) / den if den != 0 else 0.0
+        m_eff_i = (num ** 2) / den if abs(den) > 1e-12 else 0.0
+
         gamma.append(g_i)
         modal_mass.append(m_i)
         eff_modal_mass.append(m_eff_i)
 
-    gamma = np.array(gamma)
-    modal_mass = np.array(modal_mass)
-    eff_modal_mass = np.array(eff_modal_mass)
-    return gamma, modal_mass, eff_modal_mass
+    return np.array(gamma), np.array(modal_mass), np.array(eff_modal_mass)
 
 
 
